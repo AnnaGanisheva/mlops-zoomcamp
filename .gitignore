@@ -182,3 +182,8 @@ artifacts_local/
 data/
 output/
 backend.db
+
+#logs
+logs/
+mlflow
+plugins/

@@ -1,0 +1,86 @@
+x-airflow-common:
+  &airflow-common
+  build: .
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__WEBSERVER__SECRET_KEY: mysecretkey
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    PYTHONPATH: /opt/airflow:/opt/airflow/dags:/opt/airflow/duration_prediction_pipeline
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - ./logs:/opt/airflow/logs
+    - ./plugins:/opt/airflow/plugins
+    - ./duration_prediction_pipeline:/opt/airflow/duration_prediction_pipeline
+    - ./requirements.txt:/opt/airflow/requirements.txt
+    - ./data:/opt/airflow/data
+    - ./mlflow:/mlflow
+  depends_on:
+    - postgres
+    - init_folders
+
+services:
+
+  # Init service to create correct folders & permissions
+  init_folders:
+    image: busybox
+    command: sh -c "mkdir -p /project/logs /project/data /project/mlflow/artifacts && chmod -R 755 /project/logs && chmod -R 777 /project/data && chmod -R 777 /project/mlflow"
+    volumes:
+      - ./logs:/project/logs
+      - ./data:/project/data
+      - ./mlflow:/project/mlflow
+
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: >
+      bash -c "airflow db migrate && airflow users create --username admin --password admin --firstname admin --lastname admin --role Admin --email admin@example.com"
+    depends_on:
+      - postgres
+      - init_folders
+
+  airflow-webserver:
+    <<: *airflow-common
+    ports:
+      - "8080:8080"
+    command: webserver
+    restart: always
+    depends_on:
+      - postgres
+      - airflow-init
+      - init_folders
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: always
+    depends_on:
+      - postgres
+      - airflow-init
+      - init_folders
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.9.2
+    ports:
+      - "5001:5000"
+    command: >
+      mlflow server --backend-store-uri sqlite:////mlflow/mlflow.db --default-artifact-root /mlflow/artifacts --host 0.0.0.0 --port 5000
+    volumes:
+      - ./mlflow:/mlflow
+    restart: always
+    depends_on:
+      - init_folders
+
+volumes:
+  postgres-db-volume:
