@@ -187,3 +187,5 @@ backend.db
 logs/
 mlflow
 plugins/
+
+.vscode/
